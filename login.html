@@ -377,11 +377,23 @@
         };
 
         function getDeviceId() {
-            let id = localStorage.getItem('qr_device_id');
-            if (!id) {
-                id = 'dev-' + Math.random().toString(36).substr(2, 9);
-                localStorage.setItem('qr_device_id', id);
+            // Fingerprinting: Use traits that are constant for a device
+            const traits = [
+                navigator.userAgent,
+                navigator.platform,
+                screen.width + 'x' + screen.height,
+                navigator.language,
+                new Date().getTimezoneOffset()
+            ].join('|');
+
+            // Hash the string to get a shorter ID
+            let hash = 0;
+            for (let i = 0; i < traits.length; i++) {
+                hash = ((hash << 5) - hash) + traits.charCodeAt(i);
+                hash |= 0;
             }
+            const id = 'hw-' + Math.abs(hash).toString(36);
+            console.log("Hardware Fingerprint ID:", id);
             return id;
         }
 
@@ -440,8 +452,8 @@
 
                     setTimeout(() => {
                         console.log("Redirecting for role:", data.user.role);
-                        if (data.user.role === 'faculty') window.location.href = 'faculty_create_session.html';
-                        else if (data.user.role === 'student') window.location.href = 'student_scan.html';
+                        if (data.user.role === 'faculty') window.location.href = 'faculty_home.html';
+                        else if (data.user.role === 'student') window.location.href = 'student_home.html';
                         else if (data.user.role === 'admin') window.location.href = 'admin_dashboard.html';
                         else {
                             showError("Unknown role: " + data.user.role);

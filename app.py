@@ -91,6 +91,19 @@ def init_db():
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS timetable (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        faculty_id INTEGER,
+        subject_id INTEGER,
+        day_of_week TEXT,
+        start_time TEXT,
+        end_time TEXT,
+        branch TEXT,
+        semester TEXT
+    )
+    """)
+
     conn.commit()
 
     # 🚀 Auto-seed default users if database is empty (important for Render)
@@ -250,6 +263,19 @@ def login():
     else:
         conn.close()
         return jsonify({"success": False, "message": "Invalid credentials"}), 401
+
+@app.route("/api/whoami", methods=["GET"])
+@jwt_required()
+def whoami():
+    current_user_id = get_jwt_identity()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, username, role, name, branch, semester FROM users WHERE id = ?", (current_user_id,))
+    user = cur.fetchone()
+    conn.close()
+    if user:
+        return jsonify({"success": True, "user": dict(user)})
+    return jsonify({"success": False, "message": "User not found"}), 404
 
 
 # 🧑‍🏫 Faculty: Create QR Session
@@ -424,6 +450,41 @@ def mark_attendance():
     return jsonify({"success": True, "status": status})
 
 
+# 🧑‍🏫 Faculty: Manual Attendance Override
+@app.route("/api/attendance/manual", methods=["POST"])
+@jwt_required()
+def mark_manual_attendance():
+    claims = get_jwt()
+    if claims.get("role") != "faculty":
+        return jsonify({"success": False, "message": "Unauthorized."}), 403
+
+    data = request.json
+    session_id = data.get("session_id")
+    student_id = data.get("student_id")
+    status = data.get("status", "Present")
+
+    if not session_id or not student_id:
+        return jsonify({"success": False, "message": "Missing required fields"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Check if exists
+    cur.execute("SELECT 1 FROM attendance WHERE session_id=? AND student_id=?", (session_id, student_id))
+    if cur.fetchone():
+        conn.close()
+        return jsonify({"success": False, "message": "Attendance already marked"}), 400
+
+    cur.execute(
+        "INSERT INTO attendance (session_id, student_id, status, marked_at) VALUES (?, ?, ?, ?)",
+        (session_id, student_id, status, datetime.now().isoformat())
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "Attendance updated manually"})
+
+
+
 # 📡 Live Attendance for a Session
 @app.route("/api/sessions/<int:session_id>/live", methods=["GET"])
 @jwt_required()
@@ -434,6 +495,13 @@ def live_attendance(session_id):
         
     conn = get_db()
     cur = conn.cursor()
+
+    # Get session details for context
+    cur.execute("SELECT branch, semester, subject FROM sessions WHERE id=?", (session_id,))
+    session = cur.fetchone()
+    if not session:
+        conn.close()
+        return jsonify({"success": False, "message": "Session not found"}), 404
 
     cur.execute("""
         SELECT 
@@ -459,7 +527,110 @@ def live_attendance(session_id):
             "time": r[3]
         })
 
-    return jsonify({"success": True, "attendance": data})
+    return jsonify({
+        "success": True, 
+        "attendance": data,
+        "session": {
+            "branch": session["branch"],
+            "semester": session["semester"],
+            "subject": session["subject"]
+        }
+    })
+
+
+# 📊 Faculty Dashboard Stats
+@app.route("/api/faculty/stats", methods=["GET"])
+@jwt_required()
+def faculty_stats():
+    faculty_id = get_jwt_identity()
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Total Sessions
+    cur.execute("SELECT COUNT(*) FROM sessions WHERE faculty_id = ?", (faculty_id,))
+    total_sessions = cur.fetchone()[0]
+
+    # Avg Attendance Calculation
+    cur.execute("""
+        SELECT COUNT(a.id) * 1.0 / NULLIF(COUNT(DISTINCT s.id), 0)
+        FROM sessions s
+        LEFT JOIN attendance a ON s.id = a.session_id
+        WHERE s.faculty_id = ?
+    """, (faculty_id,))
+    avg_attendance = round(cur.fetchone()[0] or 0, 1)
+
+    # Students at Risk (Below 75% in any subject taught by this faculty)
+    # This is a bit complex, let's simplify for the dashboard
+    cur.execute("""
+        SELECT u.id, u.name, u.roll_no, 
+               CAST(COUNT(a.id) AS FLOAT) / COUNT(DISTINCT s.id) * 100 as percentage
+        FROM sessions s
+        JOIN attendance a ON s.id = a.session_id
+        JOIN users u ON a.student_id = u.id
+        WHERE s.faculty_id = ?
+        GROUP BY u.id
+        HAVING percentage < 75
+        LIMIT 5
+    """, (faculty_id,))
+    at_risk = [dict(r) for r in cur.fetchall()]
+
+    # Recent Sessions
+    cur.execute("""
+        SELECT s.id, s.branch, s.semester, s.subject, s.start_time,
+               (SELECT COUNT(*) FROM attendance WHERE session_id = s.id) as count
+        FROM sessions s
+        WHERE faculty_id = ?
+        ORDER BY start_time DESC
+        LIMIT 5
+    """, (faculty_id,))
+    recent = [dict(r) for r in cur.fetchall()]
+
+    conn.close()
+    return jsonify({
+        "success": True,
+        "stats": {
+            "total_sessions": total_sessions,
+            "avg_attendance": avg_attendance,
+            "at_risk_count": len(at_risk)
+        },
+        "recent_sessions": recent,
+        "at_risk_students": at_risk
+    })
+
+
+
+# 📍 Update Session Location (Allows teacher to move)
+@app.route("/api/sessions/<int:session_id>/location", methods=["PUT"])
+@jwt_required()
+def update_session_location(session_id):
+    claims = get_jwt()
+    if claims.get("role") != "faculty":
+        return jsonify({"success": False, "message": "Unauthorized."}), 403
+
+    data = request.json
+    lat = data.get("latitude")
+    lng = data.get("longitude")
+
+    if lat is None or lng is None:
+        return jsonify({"success": False, "message": "Missing coordinates"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Verify ownership
+    cur.execute("SELECT faculty_id FROM sessions WHERE id=?", (session_id,))
+    session = cur.fetchone()
+    if not session or str(session["faculty_id"]) != get_jwt_identity():
+        conn.close()
+        return jsonify({"success": False, "message": "Session not found or forbidden"}), 404
+
+    cur.execute(
+        "UPDATE sessions SET latitude = ?, longitude = ? WHERE id = ?",
+        (lat, lng, session_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "Location updated"})
 
 
 # 🧑‍💼 Admin Reports (Weekly / Monthly)
@@ -889,6 +1060,162 @@ def faculty_sessions():
 
     return jsonify({"success": True, "sessions": [dict(r) for r in rows]})
 
+
+# 🕓 Timetable Management
+@app.route("/api/admin/timetable", methods=["POST"])
+@jwt_required()
+def add_timetable_entry():
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"success": False, "message": "Admin only"}), 403
+
+    data = request.json
+    faculty_id = data.get("faculty_id")
+    subject_id = data.get("subject_id")
+    day = data.get("day_of_week")
+    start = data.get("start_time") # HH:MM
+    end = data.get("end_time")     # HH:MM
+    branch = data.get("branch")
+    semester = data.get("semester")
+
+    if not all([faculty_id, subject_id, day, start, end, branch, semester]):
+        return jsonify({"success": False, "message": "Missing fields"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO timetable (faculty_id, subject_id, day_of_week, start_time, end_time, branch, semester)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (faculty_id, subject_id, day, start, end, branch, semester))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True, "message": "Timetable period added"})
+
+@app.route("/api/faculty/timetable", methods=["GET"])
+@jwt_required()
+def get_faculty_timetable():
+    faculty_id = get_jwt_identity()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT t.*, s.name as subject_name, s.code as subject_code
+        FROM timetable t
+        JOIN subjects s ON t.subject_id = s.id
+        WHERE t.faculty_id = ?
+        ORDER BY 
+            CASE day_of_week 
+                WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 
+                WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 
+            END, t.start_time
+    """, (faculty_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify({"success": True, "timetable": [dict(r) for r in rows]})
+
+@app.route("/api/faculty/current-period", methods=["GET"])
+@jwt_required()
+def get_current_period():
+    from datetime import datetime
+    faculty_id = get_jwt_identity()
+    now = datetime.now()
+    day = now.strftime('%A')
+    time = now.strftime('%H:%M')
+
+    conn = get_db()
+    cur = conn.cursor()
+    # Find active period
+    cur.execute("""
+        SELECT t.*, s.name as subject_name, s.code as subject_code
+        FROM timetable t
+        JOIN subjects s ON t.subject_id = s.id
+        WHERE t.faculty_id = ? AND t.day_of_week = ? 
+        AND t.start_time <= ? AND t.end_time >= ?
+    """, (faculty_id, day, time, time))
+    period = cur.fetchone()
+    conn.close()
+
+    if period:
+        return jsonify({"success": True, "period": dict(period)})
+    return jsonify({"success": False, "message": "No active period found"})
+
+# 🎓 Student Dashboard Data
+@app.route("/api/student/stats", methods=["GET"])
+@jwt_required()
+def get_student_stats():
+    student_id = get_jwt_identity()
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Simple overall attendance calculation
+    cur.execute("SELECT COUNT(*) FROM attendance WHERE student_id = ?", (student_id,))
+    present = cur.fetchone()[0]
+    
+    # Mocking total classes for demo purposes (e.g., 4 classes/day * 20 days)
+    total_classes = 80 
+    perc = (present / total_classes * 100) if total_classes > 0 else 0
+    
+    conn.close()
+    return jsonify({
+        "success": True, 
+        "stats": {
+            "present_count": present,
+            "overall_percentage": min(perc, 100)
+        }
+    })
+
+@app.route("/api/student/timetable", methods=["GET"])
+@jwt_required()
+def get_student_timetable():
+    student_id = get_jwt_identity()
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Get student's branch and semester
+    cur.execute("SELECT branch, semester FROM users WHERE id = ?", (student_id,))
+    student = cur.fetchone()
+    if not student:
+        return jsonify({"success": False, "message": "Student not found"}), 404
+        
+    day = datetime.now().strftime('%A')
+    
+    cur.execute("""
+        SELECT t.*, s.name as subject_name, u.name as faculty_name
+        FROM timetable t
+        JOIN subjects s ON t.subject_id = s.id
+        JOIN users u ON t.faculty_id = u.id
+        WHERE UPPER(t.branch) = UPPER(?) AND UPPER(t.semester) = UPPER(?) AND t.day_of_week = ?
+        ORDER BY t.start_time
+    """, (student['branch'], student['semester'], day))
+    rows = cur.fetchall()
+    conn.close()
+    
+    return jsonify({"success": True, "timetable": [dict(r) for r in rows]})
+
+@app.route("/api/student/timetable-full", methods=["GET"])
+@jwt_required()
+def get_student_timetable_full():
+    student_id = get_jwt_identity()
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("SELECT branch, semester FROM users WHERE id = ?", (student_id,))
+    student = cur.fetchone()
+    
+    cur.execute("""
+        SELECT t.*, s.name as subject_name, u.name as faculty_name
+        FROM timetable t
+        JOIN subjects s ON t.subject_id = s.id
+        JOIN users u ON t.faculty_id = u.id
+        WHERE UPPER(t.branch) = UPPER(?) AND UPPER(t.semester) = UPPER(?)
+        ORDER BY 
+            CASE day_of_week 
+                WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 
+                WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 
+            END, t.start_time
+    """, (student['branch'], student['semester']))
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify({"success": True, "timetable": [dict(r) for r in rows]})
 
 if __name__ == "__main__":
     # Get port from environment variable (default to 8080 for local)

@@ -57,7 +57,11 @@
 <body>
 
     <div class="card">
-        <h2>Start Attendance</h2>
+        <div style="display: flex; align-items: center; margin-bottom: 20px; gap: 10px;">
+            <a href="faculty_home.html" style="color: #64748b; text-decoration: none;"><i data-lucide="chevron-left"
+                    style="width: 20px;"></i></a>
+            <h2 style="margin: 0;">Start Attendance</h2>
+        </div>
         <p>Please ensure GPS is enabled.</p>
 
         <input type="text" id="branch" placeholder="Branch (e.g. CSE)" />
@@ -69,10 +73,46 @@
         <p id="status"></p>
     </div>
 
+    <script src="https://unpkg.com/lucide@latest"></script>
     <script>
+        lucide.createIcons();
         const API_BASE = window.location.origin + "/api";
         // In a real app, you get this token from your login page
         const TOKEN = localStorage.getItem("access_token");
+
+        // --- Auto-fill Logic ---
+        window.onload = () => {
+            const branch = localStorage.getItem('auto_fill_branch');
+            const semester = localStorage.getItem('auto_fill_semester');
+            const subject = localStorage.getItem('auto_fill_subject');
+
+            if (branch) document.getElementById('branch').value = branch;
+            if (semester) document.getElementById('semester').value = semester;
+            if (subject) document.getElementById('subject').value = subject;
+
+            // Clear after use
+            localStorage.removeItem('auto_fill_branch');
+            localStorage.removeItem('auto_fill_semester');
+            localStorage.removeItem('auto_fill_subject');
+
+            if (!branch) tryToSyncWithCurrentPeriod();
+        };
+
+        async function tryToSyncWithCurrentPeriod() {
+            try {
+                const res = await fetch(`${API_BASE}/faculty/current-period`, {
+                    headers: { 'Authorization': `Bearer ${TOKEN}` }
+                });
+                const data = await res.json();
+                if (data.success && data.period) {
+                    if (confirm(`Detected current period: ${data.period.subject_name}. Fill details?`)) {
+                        document.getElementById('branch').value = data.period.branch;
+                        document.getElementById('semester').value = data.period.semester;
+                        document.getElementById('subject').value = data.period.subject_name;
+                    }
+                }
+            } catch (e) { }
+        }
 
         function requestLocation() {
             const statusMsg = document.getElementById("status");

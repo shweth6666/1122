@@ -225,6 +225,10 @@
                 <i data-lucide="refresh-cw" style="width: 14px;"></i>
                 <span>Rotating QR Code for Security</span>
             </div>
+            <div class="rotation-timer" style="margin-top: 5px;">
+                <i data-lucide="map-pin" style="width: 14px; color: #10b981;"></i>
+                <span id="loc-status">Location Sync Active</span>
+            </div>
             <div class="timer-bar">
                 <div class="timer-progress" id="progress"></div>
             </div>
@@ -288,9 +292,42 @@
                 const data = await res.json();
                 if (data.success) {
                     updateList(data.attendance);
-                    document.getElementById('info-text').innerText = `${data.session.branch} ${data.session.semester} | ${data.session.subject}`;
+                    if (data.session) {
+                        document.getElementById('info-text').innerText = `${data.session.branch} ${data.session.semester} | ${data.session.subject}`;
+                    }
                 }
             } catch (e) { console.error("Live list failed", e); }
+        }
+
+        // 3. Update Location (Teacher moves)
+        async function updateLocation() {
+            if (!navigator.geolocation) return;
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                try {
+                    const res = await fetch(`${API_BASE}/sessions/${sessionId}/location`, {
+                        method: "PUT",
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            latitude: pos.coords.latitude,
+                            longitude: pos.coords.longitude
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        document.getElementById('loc-status').innerText = "Location Sync: " + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        document.getElementById('loc-status').style.color = "#10b981";
+                    }
+                } catch (e) {
+                    document.getElementById('loc-status').innerText = "Location Sync Failed";
+                    document.getElementById('loc-status').style.color = "#ef4444";
+                }
+            }, (err) => {
+                document.getElementById('loc-status').innerText = "GPS Error: " + err.message;
+                document.getElementById('loc-status').style.color = "#ef4444";
+            }, { enableHighAccuracy: true });
         }
 
         function updateList(students) {
@@ -328,14 +365,16 @@
         function endSession() {
             if (confirm("End this session and save records?")) {
                 localStorage.removeItem("current_session_id");
-                window.location.href = "faculty_create_session.html";
+                window.location.href = "faculty_home.html";
             }
         }
 
         // Start Intervals
         refreshQR();
+        updateLocation();
         setInterval(refreshQR, 30000); // Rotate QR every 30s
         setInterval(fetchLiveAttendance, 3000); // Polling for new students
+        setInterval(updateLocation, 10000); // Update hub location every 10s
         fetchLiveAttendance();
 
     </script>

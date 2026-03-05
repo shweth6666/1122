@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Faculty Home | Smart Attendance</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@400;500&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-glow: rgba(99, 102, 241, 0.4);
+            --bg: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background: var(--bg);
+            color: #f8fafc;
+            min-height: 100vh;
+            padding-bottom: 100px;
+            /* Space for FAB */
+            background-image: radial-gradient(circle at 10% 10%, #1e1b4b 0%, #0f172a 100%);
+        }
+
+        .header {
+            padding: 30px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .menu-btn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .greeting {
+            flex: 1;
+        }
+
+        .greeting h1 {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .greeting p {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+
+        .user-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 14px;
+            background: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            box-shadow: 0 0 20px var(--primary-glow);
+        }
+
+        .container {
+            padding: 0 20px;
+        }
+
+        /* Sidebar / Drawer */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: -280px;
+            width: 280px;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--glass-border);
+            z-index: 1000;
+            transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 40px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+
+        .sidebar.active {
+            left: 0;
+            box-shadow: 20px 0 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .sidebar-logo {
+            width: 40px;
+            height: 40px;
+            background: var(--primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .nav-links {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .nav-link {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 14px 18px;
+            border-radius: 14px;
+            color: #94a3b8;
+            text-decoration: none;
+            transition: 0.2s;
+            font-weight: 500;
+        }
+
+        .nav-link i {
+            width: 20px;
+            height: 20px;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+            background: rgba(99, 102, 241, 0.1);
+            color: white;
+        }
+
+        .nav-link.active i {
+            color: var(--primary);
+        }
+
+        .sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            z-index: 999;
+            display: none;
+            opacity: 0;
+            transition: 0.3s;
+        }
+
+        .sidebar-overlay.active {
+            display: block;
+            opacity: 1;
+        }
+
+        .logout-link {
+            margin-top: auto;
+            color: #ef4444 !important;
+        }
+
+        .logout-link:hover {
+            background: rgba(239, 68, 68, 0.1) !important;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .stat-card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            padding: 20px;
+            border-radius: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .stat-card.wide {
+            grid-column: span 2;
+        }
+
+        .stat-label {
+            color: #94a3b8;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        /* Chart Section */
+        .chart-box {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            padding: 20px;
+            border-radius: 24px;
+            margin-bottom: 25px;
+        }
+
+        .section-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        /* Lists */
+        .item-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .list-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--glass-border);
+            padding: 16px;
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: 0.2s;
+        }
+
+        .list-item:active {
+            transform: scale(0.98);
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .item-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .item-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+        }
+
+        .item-text h4 {
+            font-size: 14px;
+            margin-bottom: 2px;
+        }
+
+        .item-text p {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .risk-badge {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+
+        /* Floating Action Button (FAB) */
+        .fab {
+            position: fixed;
+            bottom: 30px;
+            right: 20px;
+            left: 20px;
+            background: var(--primary);
+            color: white;
+            height: 60px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow: 0 15px 30px var(--primary-glow);
+            text-decoration: none;
+            z-index: 100;
+            transition: 0.3s;
+        }
+
+        .fab:hover {
+            background: #4f46e5;
+            transform: translateY(-5px);
+        }
+
+        .fab:active {
+            transform: scale(0.95);
+        }
+
+        /* Modal for Export/History */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            z-index: 200;
+            padding: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: #1e293b;
+            width: 100%;
+            max-width: 500px;
+            border-radius: 32px;
+            padding: 30px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .btn-close {
+            background: none;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+        }
+
+        .export-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .btn-download {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            padding: 8px 15px;
+            border-radius: 10px;
+            font-size: 12px;
+            text-decoration: none;
+            font-weight: 600;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="sidebar-overlay" id="overlay" onclick="toggleMenu()"></div>
+
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo"><i data-lucide="qr-code"></i></div>
+            <div style="font-weight: 700; font-size: 18px;">Smart QR</div>
+        </div>
+
+        <div class="nav-links">
+            <a href="faculty_home.html" class="nav-link active">
+                <i data-lucide="layout-dashboard"></i> Home Dashboard
+            </a>
+            <a href="timetable.html" class="nav-link">
+                <i data-lucide="calendar"></i> Weekly Timetable
+            </a>
+            <a href="faculty_create_session.html" class="nav-link">
+                <i data-lucide="plus-circle"></i> Start Attendance
+            </a>
+            <a href="#" onclick="showHistory()" class="nav-link">
+                <i data-lucide="history"></i> Session History
+            </a>
+            <a href="admin_dashboard.html" class="nav-link">
+                <i data-lucide="user-cog"></i> Admin Portal
+            </a>
+
+            <a href="login.html" class="nav-link logout-link">
+                <i data-lucide="log-out"></i> Logout
+            </a>
+        </div>
+    </div>
+
+    <div class="header">
+        <button class="menu-btn" onclick="toggleMenu()">
+            <i data-lucide="menu" style="width: 28px; height: 28px;"></i>
+        </button>
+        <div class="greeting">
+            <p>Welcome back,</p>
+            <h1 id="faculty-name">Professor</h1>
+        </div>
+        <div class="user-avatar" id="avatar-initial">T</div>
+    </div>
+
+    <div class="container">
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">
+                    <i data-lucide="calendar"></i> Sessions
+                </div>
+                <div class="stat-value" id="total-sessions">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">
+                    <i data-lucide="percent"></i> Avg Att.
+                </div>
+                <div class="stat-value" id="avg-attendance">0%</div>
+            </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="chart-box">
+            <div class="section-title">
+                Attendance Trends
+                <i data-lucide="trending-up" style="color: var(--success); width: 20px;"></i>
+            </div>
+            <canvas id="attendanceChart" height="200"></canvas>
+        </div>
+
+        <!-- At Risk Students -->
+        <div class="section-title">
+            Students At Risk (< 75%) <span style="font-size: 12px; color: var(--danger);">Top 5</span>
+        </div>
+        <div class="item-list" id="at-risk-list">
+            <!-- Dynamic data -->
+            <p style="text-align:center; color:#64748b; padding: 20px;">No students at risk. Great job!</p>
+        </div>
+
+        <!-- Today's Schedule -->
+        <div class="section-title">
+            Today's Schedule
+            <i data-lucide="calendar-days" style="color: var(--primary); width: 20px;"></i>
+        </div>
+        <div class="item-list" id="timetable-list" style="margin-bottom: 25px;">
+            <p style="text-align:center; color:#64748b; padding: 20px;">No classes scheduled for today.</p>
+        </div>
+
+        <!-- Recent Sessions -->
+        <div class="section-title">
+            Recent Sessions
+            <a href="#" onclick="showHistory()"
+                style="font-size: 12px; color: var(--primary); text-decoration: none;">View All</a>
+        </div>
+        <div class="item-list" id="recent-sessions-list">
+            <!-- Dynamic data -->
+        </div>
+    </div>
+
+    <!-- FAB -->
+    <a href="faculty_create_session.html" class="fab">
+        <i data-lucide="plus-circle"></i>
+        Start New Attendance
+    </a>
+
+    <!-- History Modal -->
+    <div class="modal" id="historyModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Session History</h3>
+                <button class="btn-close" onclick="hideHistory()"><i data-lucide="x"></i></button>
+            </div>
+            <div id="history-container">
+                <!-- Rows -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + "/api";
+        const token = localStorage.getItem("access_token");
+        const userName = localStorage.getItem("user_name") || "Professor";
+
+        if (!token) window.location.href = 'login.html';
+
+        document.getElementById('faculty-name').innerText = userName;
+        document.getElementById('avatar-initial').innerText = userName[0];
+        lucide.createIcons();
+
+        async function loadTimetable() {
+            try {
+                const res = await fetch(`${API_BASE}/faculty/timetable`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (data.success) {
+                    const list = document.getElementById('timetable-list');
+                    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                    const today = days[new Date().getDay()];
+                    const todayClasses = data.timetable.filter(t => t.day_of_week === today);
+
+                    if (todayClasses.length > 0) {
+                        list.innerHTML = '';
+                        todayClasses.forEach(t => {
+                            list.innerHTML += `
+                                <div class="list-item" onclick="startClassFromTimetable('${t.branch}', '${t.semester}', '${t.subject_name}')">
+                                    <div class="item-info">
+                                        <div class="item-icon"><i data-lucide="clock"></i></div>
+                                        <div class="item-text">
+                                            <h4>${t.subject_name}</h4>
+                                            <p>${t.start_time} - ${t.end_time} • ${t.branch} ${t.semester}</p>
+                                        </div>
+                                    </div>
+                                    <i data-lucide="chevron-right" style="color: #64748b; width: 16px;"></i>
+                                </div>
+                            `;
+                        });
+                        lucide.createIcons();
+                    }
+                }
+            } catch (e) { console.error("Timetable failed", e); }
+        }
+
+        function startClassFromTimetable(branch, sem, sub) {
+            localStorage.setItem('auto_fill_branch', branch);
+            localStorage.setItem('auto_fill_semester', sem);
+            localStorage.setItem('auto_fill_subject', sub);
+            window.location.href = 'faculty_create_session.html';
+        }
+
+        function toggleMenu() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('overlay');
+            sidebar.classList.toggle('active');
+            overlay.classList.toggle('active');
+            lucide.createIcons();
+        }
+
+        async function loadDashboard() {
+            try {
+                const res = await fetch(`${API_BASE}/faculty/stats`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    // Update Stats
+                    document.getElementById('total-sessions').innerText = data.stats.total_sessions;
+                    document.getElementById('avg-attendance').innerText = data.stats.avg_attendance + "%";
+
+                    // Update Risk List
+                    const riskList = document.getElementById('at-risk-list');
+                    if (data.at_risk_students.length > 0) {
+                        riskList.innerHTML = '';
+                        data.at_risk_students.forEach(s => {
+                            riskList.innerHTML += `
+                                <div class="list-item">
+                                    <div class="item-info">
+                                        <div class="item-icon"><i data-lucide="user"></i></div>
+                                        <div class="item-text">
+                                            <h4>${s.name}</h4>
+                                            <p>${s.roll_no}</p>
+                                        </div>
+                                    </div>
+                                    <div class="risk-badge">${Math.round(s.percentage)}%</div>
+                                </div>
+                            `;
+                        });
+                    }
+
+                    // Update Recent Sessions
+                    const recentList = document.getElementById('recent-sessions-list');
+                    recentList.innerHTML = '';
+                    data.recent_sessions.forEach(s => {
+                        const date = new Date(s.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                        recentList.innerHTML += `
+                            <div class="list-item">
+                                <div class="item-info">
+                                    <div class="item-icon"><i data-lucide="book-open"></i></div>
+                                    <div class="item-text">
+                                        <h4>${s.subject}</h4>
+                                        <p>${s.branch} ${s.semester} • ${date}</p>
+                                    </div>
+                                </div>
+                                <div style="text-align: right">
+                                    <div style="font-weight: 700; font-size: 14px;">${s.count}</div>
+                                    <div style="font-size: 10px; color: #94a3b8;">Present</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    initChart(data.recent_sessions);
+                    lucide.createIcons();
+                }
+            } catch (e) { console.error("Load failed", e); }
+        }
+
+        function initChart(sessions) {
+            const ctx = document.getElementById('attendanceChart').getContext('2d');
+            const labels = [...sessions].reverse().map(s => new Date(s.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            const counts = [...sessions].reverse().map(s => s.count);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Attendance Count',
+                        data: counts,
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        pointBackgroundColor: '#6366f1',
+                        pointBorderColor: '#fff',
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(255,255,255,0.05)' },
+                            ticks: { color: '#64748b' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#64748b' }
+                        }
+                    }
+                }
+            });
+        }
+
+        function showHistory() {
+            document.getElementById('historyModal').style.display = 'flex';
+            // In a real app, populate with export buttons
+        }
+
+        function hideHistory() {
+            document.getElementById('historyModal').style.display = 'none';
+        }
+
+        loadDashboard();
+        loadTimetable();
+    </script>
+</body>
+
+</html>

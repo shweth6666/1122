@@ -1,6 +1,9 @@
-name,username,password,branch,role
-anjitha,anjitha1,anjitha123,cse,faculty
-sisira,sisira1,sisira123,cse,faculty
-cinu,cinu1,cinu123,cse,faculty
-lekha,lekha1,lekha123,cse,faculty
-renjith,renjith1,renjith123,cse,faculty
+name,username,password,branch,role,subject name
+ranjith,ranjith,ranjith123,cse,faculty,CD
+cinu,cinu,cinu123,cse,faculty,CG
+sisira,sisira,sisira123,cse,faculty,AAD
+anjitha,anjitha,anjitha123,cse,faculty,DA
+lekha,lekha,lekha123,cse,faculty,IEFT
+visakh,visakh,visakh123,cse,faculty,compre
+sisira,sisira,sisira123,cse,faculty,networking lab
+anjitha,anjitha,anjitha123,cse,faculty,mini project
