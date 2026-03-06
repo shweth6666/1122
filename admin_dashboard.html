@@ -515,20 +515,61 @@
 
                 <!-- REPORTS TAB -->
                 <div id="reports" class="tab-content">
+                    <!-- Download CSV card -->
                     <div class="stats-grid"
                         style="grid-template-columns: 1fr 1fr; max-width: 800px; margin: 0 auto 30px;">
                         <div class="stat-card" style="align-items: center; text-align: center;">
                             <i data-lucide="calendar" style="width: 48px; height: 48px;"></i>
-                            <h3>Generate Weekly</h3>
-                            <button class="btn-primary" style="margin-top: 10px;"
-                                onclick="exportReport('weekly')">Download CSV</button>
+                            <h3>Weekly Report</h3>
+                            <p style="font-size:13px; color:var(--text-dim); margin: 8px 0;">Last 7 days</p>
+                            <button class="btn-primary" style="margin-top: 10px;" onclick="exportReport('weekly')">⬇
+                                Download CSV</button>
                         </div>
                         <div class="stat-card" style="align-items: center; text-align: center;">
                             <i data-lucide="calendar-days" style="width: 48px; height: 48px;"></i>
-                            <h3>Generate Monthly</h3>
-                            <button class="btn-primary" style="margin-top: 10px;"
-                                onclick="exportReport('monthly')">Download CSV</button>
+                            <h3>Monthly Report</h3>
+                            <p style="font-size:13px; color:var(--text-dim); margin: 8px 0;">Last 30 days</p>
+                            <button class="btn-primary" style="margin-top: 10px;" onclick="exportReport('monthly')">⬇
+                                Download CSV</button>
                         </div>
+                    </div>
+
+                    <!-- Filter row -->
+                    <div style="display:flex; gap:12px; max-width:800px; margin: 0 auto 20px; align-items:flex-end;">
+                        <div style="flex:1;">
+                            <label style="font-size:13px; color:var(--text-dim);">Filter by Branch</label>
+                            <input type="text" id="reportBranch" placeholder="e.g. CSE"
+                                style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.05); color:white; margin-top:5px;">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-size:13px; color:var(--text-dim);">Filter by Semester</label>
+                            <input type="text" id="reportSemester" placeholder="e.g. S6"
+                                style="width:100%; padding:10px; border-radius:10px; border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.05); color:white; margin-top:5px;">
+                        </div>
+                    </div>
+
+                    <!-- Sessions table -->
+                    <div class="card-table" style="max-width:800px; margin: 0 auto;">
+                        <div class="table-header">
+                            <h3>All Attendance Sessions</h3>
+                            <button class="btn-primary" onclick="loadAttendanceSessions()">↻ Refresh</button>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Subject</th>
+                                    <th>Faculty</th>
+                                    <th>Branch / Sem</th>
+                                    <th>Date & Time</th>
+                                    <th>Present</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendanceSessionsTable">
+                                <tr>
+                                    <td colspan="5" style="text-align:center; color:var(--text-dim);">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -650,6 +691,7 @@
             if (tabId === 'overview') loadOverview();
             if (tabId === 'users') loadUsers();
             if (tabId === 'subjects') loadSubjects();
+            if (tabId === 'reports') loadAttendanceSessions();
         }
 
         function openModal(id) { document.getElementById(id).style.display = 'flex'; }
@@ -800,31 +842,58 @@
             }
         }
 
-        async function exportReport(period) {
-            // Since our backend endpoint for CSV is a POST / api / admin / reports / export
-            // We need to trigger a file download. For simplicity, we filter some defaults
-            const response = await fetch(`${API_BASE}/admin/reports/export`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-                body: JSON.stringify({
-                    branch: "CSE",
-                    semester: "S6",
-                    subject: "Compiler Design",
-                    period: period
-                })
-            });
+        async function loadAttendanceSessions() {
+            const tbody = document.getElementById('attendanceSessionsTable');
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-dim);">Loading...</td></tr>';
+            try {
+                const res = await fetch(`${API_BASE}/admin/attendance`, {
+                    headers: { 'Authorization': `Bearer ${TOKEN}` }
+                });
+                const data = await res.json();
+                if (data.success && data.sessions.length > 0) {
+                    tbody.innerHTML = data.sessions.map(s => `
+                        <tr>
+                            <td>${s.subject || '-'}</td>
+                            <td>${s.faculty_name || 'Unknown'}</td>
+                            <td>${s.branch} ${s.semester}</td>
+                            <td>${s.start_time ? s.start_time.slice(0, 16).replace('T', ' ') : '-'}</td>
+                            <td><span style="background:rgba(16,185,129,0.15);color:#10b981;padding:3px 10px;border-radius:20px;font-weight:700;">${s.present_count}</span></td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-dim);">No sessions found yet.</td></tr>';
+                }
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#ef4444;">Failed to load. Check connection.</td></tr>';
+            }
+        }
 
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `attendance_${period}_report.csv`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            } else {
-                alert("Failed to generate report. Ensure sessions exist for the selected criteria.");
+        async function exportReport(period) {
+            const branch = document.getElementById('reportBranch')?.value || '';
+            const semester = document.getElementById('reportSemester')?.value || '';
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/reports/export`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+                    body: JSON.stringify({ branch, semester, period })
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `attendance_${period}_report.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    alert("Failed to generate report. Ensure sessions exist for the selected period.");
+                }
+            } catch (e) {
+                alert("Network error generating report: " + e.message);
             }
         }
 

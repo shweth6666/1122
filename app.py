@@ -929,6 +929,111 @@ def list_subjects():
     return jsonify({"success": True, "subjects": [dict(r) for r in rows]})
 
 
+# 📊 Admin: View All Attendance Sessions
+@app.route("/api/admin/attendance", methods=["GET"])
+@jwt_required()
+def admin_list_attendance():
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"success": False, "message": "Unauthorized. Admin only."}), 403
+
+    conn = get_db()
+    cur = conn.cursor()
+    # Get all sessions with faculty name and attendance count
+    cur.execute("""
+        SELECT s.id, s.branch, s.semester, s.subject, s.start_time, s.expires_at,
+               u.name as faculty_name,
+               COUNT(a.id) as present_count
+        FROM sessions s
+        LEFT JOIN users u ON s.faculty_id = u.id
+        LEFT JOIN attendance a ON a.session_id = s.id
+        GROUP BY s.id
+        ORDER BY s.start_time DESC
+        LIMIT 100
+    """)
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify({"success": True, "sessions": [dict(r) for r in rows]})
+
+
+# 📥 Admin: Export Attendance Report as CSV
+@app.route("/api/admin/reports/export", methods=["POST"])
+@jwt_required()
+def export_report():
+    import io
+    import csv as csv_module
+    claims = get_jwt()
+    if claims.get("role") != "admin":
+        return jsonify({"success": False, "message": "Unauthorized. Admin only."}), 403
+
+    data = request.json or {}
+    period = data.get("period", "weekly")  # weekly or monthly
+    branch = data.get("branch", "")
+    semester = data.get("semester", "")
+
+    # Calculate date range
+    now = datetime.now()
+    if period == "weekly":
+        cutoff = now - timedelta(days=7)
+    else:
+        cutoff = now - timedelta(days=30)
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    query = """
+        SELECT 
+            u_student.name as student_name,
+            u_student.roll_no,
+            u_student.branch,
+            u_student.semester,
+            s.subject,
+            s.start_time as class_date,
+            a.status,
+            u_faculty.name as faculty_name
+        FROM attendance a
+        JOIN users u_student ON a.student_id = u_student.id
+        JOIN sessions s ON a.session_id = s.id
+        LEFT JOIN users u_faculty ON s.faculty_id = u_faculty.id
+        WHERE s.start_time >= ?
+    """
+    params = [cutoff.isoformat()]
+
+    if branch:
+        query += " AND s.branch = ?"
+        params.append(branch)
+    if semester:
+        query += " AND s.semester = ?"
+        params.append(semester)
+
+    query += " ORDER BY s.start_time DESC"
+
+    cur.execute(query, params)
+    rows = cur.fetchall()
+    conn.close()
+
+    # Generate CSV
+    output = io.StringIO()
+    writer = csv_module.writer(output)
+    writer.writerow(["Student Name", "Roll No", "Branch", "Semester", "Subject", "Class Date", "Status", "Faculty"])
+    for row in rows:
+        writer.writerow([
+            row["student_name"], row["roll_no"], row["branch"],
+            row["semester"], row["subject"],
+            row["class_date"][:16] if row["class_date"] else "",
+            row["status"], row["faculty_name"]
+        ])
+
+    csv_content = output.getvalue()
+    output.close()
+
+    from flask import Response
+    return Response(
+        csv_content,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=attendance_{period}_report.csv"}
+    )
+
 
 # � Error Handlers (Return JSON instead of HTML)
 @app.errorhandler(404)
